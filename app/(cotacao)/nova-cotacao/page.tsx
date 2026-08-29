@@ -18,7 +18,7 @@ export default function NovaCotacaoPage() {
         <CardHeader>
           <CardTitle>Produto</CardTitle>
           <CardDescription>
-            Catálogo da sua marca ou "sob especificação" (produto novo).
+            Catálogo da sua marca ou &ldquo;sob especificação&rdquo; (produto novo).
           </CardDescription>
         </CardHeader>
         <CardContent>
