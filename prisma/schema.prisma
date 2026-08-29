@@ -1,0 +1,311 @@
+// Portal do Personalizado — TPO Embalagens
+// Schema gerado a partir do Modelo de Dados v1.5 (claude/modelo-de-dados-portal-do-personalizado.md)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Perfil {
+  administrador
+  colaborador
+  visitante
+  comprador
+}
+
+enum SubtipoComprador {
+  padrao
+  gerente
+}
+
+enum OrigemCadastro {
+  autocadastro
+  cadastro_tpo
+}
+
+enum StatusCadastro {
+  pendente_aprovacao
+  aprovado
+  recusado
+}
+
+enum TipoPrecificacao {
+  automatica
+  manual
+}
+
+// 12 status da Cotação/Pedido (PRD v2.1, seção 6.2), agrupados em 5 fases.
+enum StatusCotacao {
+  em_cotacao
+  em_cotacao_aguardando_aprovacao
+  em_aprovacao_prototipo_3d
+  em_aprovacao_prototipo_fisico
+  financeiro_aguardando_liberacao
+  financeiro_liberado
+  pre_producao
+  em_producao
+  em_expedicao
+  pronto_para_envio
+  enviado
+  recebido
+}
+
+enum FaseCotacao {
+  cotacao
+  aprovacao
+  financeiro
+  producao
+  entrega
+}
+
+enum TipoEventoNotificacao {
+  cadastro_aprovado
+  cadastro_recusado
+  cotacao_calculada
+  cotacao_revisada
+  mudanca_status
+}
+
+// ---------------------------------------------------------------------------
+// Entidades
+// ---------------------------------------------------------------------------
+
+/// 2.1 — Empresa cliente da TPO. Só pode ser criada pelo Administrador.
+model Marca {
+  id                String   @id @default(cuid())
+  nomeMarca         String   @map("nome_marca")
+  razaoSocial       String   @map("razao_social")
+  cnpj              String   @unique
+  enderecoCompleto  String   @map("endereco_completo")
+  ativa             Boolean  @default(true)
+  criadoPorId       String   @map("criado_por_id")
+  criadoPor         Usuario  @relation("MarcaCriadaPor", fields: [criadoPorId], references: [id])
+  dataCriacao       DateTime @default(now()) @map("data_criacao")
+
+  usuarios Usuario[] @relation("MarcaUsuarios")
+  produtos Produto[]
+  cotacoes Cotacao[]
+
+  @@map("marcas")
+}
+
+/// 2.2 — Base de todos os perfis de acesso.
+model Usuario {
+  id                String           @id @default(cuid())
+  nomeCompleto      String           @map("nome_completo")
+  email             String           @unique
+  cpf               String?
+  whatsapp          String?
+  perfil            Perfil
+  subtipoComprador  SubtipoComprador? @map("subtipo_comprador")
+  marcaId           String?          @map("marca_id")
+  marca             Marca?           @relation("MarcaUsuarios", fields: [marcaId], references: [id])
+  origemCadastro    OrigemCadastro   @map("origem_cadastro")
+  statusCadastro    StatusCadastro   @default(pendente_aprovacao) @map("status_cadastro")
+  aprovadoPorId     String?          @map("aprovado_por_id")
+  aprovadoPor       Usuario?         @relation("UsuarioAprovadoPor", fields: [aprovadoPorId], references: [id])
+  dataAprovacao     DateTime?        @map("data_aprovacao")
+  ativo             Boolean          @default(true)
+  dataCriacao       DateTime         @default(now()) @map("data_criacao")
+
+  // Relações inversas
+  marcasCriadas          Marca[]              @relation("MarcaCriadaPor")
+  usuariosAprovados       Usuario[]            @relation("UsuarioAprovadoPor")
+  solicitacaoCadastro     SolicitacaoCadastro?
+  cotacoesSolicitadas     Cotacao[]            @relation("CotacaoComprador")
+  cotacoesRevisadas       Cotacao[]            @relation("CotacaoRevisadoPor")
+  historicoAlteracoes     HistoricoStatus[]    @relation("HistoricoAlteradoPor")
+  tokens                  TokenAutenticacao[]
+  notificacoes            NotificacaoEmail[]
+  anexosEnviados          Anexo[]              @relation("AnexoEnviadoPor")
+
+  @@map("usuarios")
+}
+
+/// 2.3 — Dados da empresa coletados no autocadastro público (caminho A).
+model SolicitacaoCadastro {
+  id                    String   @id @default(cuid())
+  usuarioId             String   @unique @map("usuario_id")
+  usuario               Usuario  @relation(fields: [usuarioId], references: [id])
+  razaoSocial           String   @map("razao_social")
+  cnpj                  String
+  nomeMarcaPretendida   String   @map("nome_marca_pretendida")
+  enderecoCompleto      String   @map("endereco_completo")
+  dataEnvio             DateTime @default(now()) @map("data_envio")
+
+  nichos SolicitacaoCadastroNicho[]
+
+  @@map("solicitacoes_cadastro")
+}
+
+/// 2.4 — Lista fixa de opções do campo "Nicho do estabelecimento".
+model Nicho {
+  id   String @id @default(cuid())
+  nome String @unique
+  // Oriental, Pizzaria, Hamburgueria, Confeitaria, Salgados, Esfiha,
+  // Refeições, Pastelaria, Marmitas, Padaria, Carnes.
+
+  solicitacoes SolicitacaoCadastroNicho[]
+
+  @@map("nichos")
+}
+
+/// 2.5 — Associativa N:N entre Solicitacao_Cadastro e Nicho.
+model SolicitacaoCadastroNicho {
+  solicitacaoCadastroId String @map("solicitacao_cadastro_id")
+  solicitacao           SolicitacaoCadastro @relation(fields: [solicitacaoCadastroId], references: [id], onDelete: Cascade)
+  nichoId               String @map("nicho_id")
+  nicho                 Nicho  @relation(fields: [nichoId], references: [id])
+
+  @@id([solicitacaoCadastroId, nichoId])
+  @@map("solicitacoes_cadastro_nichos")
+}
+
+/// 2.6 — Catálogo de produtos, sempre vinculado a uma Marca.
+model Produto {
+  id          String   @id @default(cuid())
+  marcaId     String   @map("marca_id")
+  marca       Marca    @relation(fields: [marcaId], references: [id])
+  nome        String
+  descricao   String?
+  ativo       Boolean  @default(true)
+  dataCriacao DateTime @default(now()) @map("data_criacao")
+
+  faixasPreco   FaixaPreco[]
+  itensCotacao  ItemCotacao[]
+
+  @@map("produtos")
+}
+
+/// 2.7 — Faixas de preço por quantidade, por produto.
+model FaixaPreco {
+  id                String  @id @default(cuid())
+  produtoId         String  @map("produto_id")
+  produto           Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  quantidadeMinima  Int     @map("quantidade_minima")
+  quantidadeMaxima  Int?    @map("quantidade_maxima")
+  precoUnitario     Decimal @map("preco_unitario") @db.Decimal(12, 4)
+
+  @@map("faixas_preco")
+}
+
+/// 2.8 — Entidade unificada Cotação → Pedido (ver nota de modelagem no Modelo de Dados v1.5, seção 1).
+model Cotacao {
+  id                     String            @id @default(cuid())
+  numero                 String            @unique
+  // "10" + 5 dígitos sequenciais, sem separador — ex.: 1000146.
+  compradorId            String            @map("comprador_id")
+  comprador              Usuario           @relation("CotacaoComprador", fields: [compradorId], references: [id])
+  marcaId                String            @map("marca_id")
+  marca                  Marca             @relation(fields: [marcaId], references: [id])
+  status                 StatusCotacao     @default(em_cotacao)
+  statusFase             FaseCotacao       @default(cotacao) @map("status_fase")
+  tipoPrecificacao       TipoPrecificacao  @map("tipo_precificacao")
+  prazoRetornoManual     DateTime?         @map("prazo_retorno_manual")
+  valorTotalSugerido     Decimal?          @map("valor_total_sugerido") @db.Decimal(12, 2)
+  valorTotalFinal        Decimal?          @map("valor_total_final") @db.Decimal(12, 2)
+  revisadoPorId          String?           @map("revisado_por_id")
+  revisadoPor            Usuario?          @relation("CotacaoRevisadoPor", fields: [revisadoPorId], references: [id])
+  dataSolicitacao        DateTime          @default(now()) @map("data_solicitacao")
+  dataUltimaAtualizacao  DateTime          @updatedAt @map("data_ultima_atualizacao")
+
+  itens        ItemCotacao[]
+  historico    HistoricoStatus[]
+  anexos       Anexo[]
+  notificacoes NotificacaoEmail[]
+
+  @@map("cotacoes")
+}
+
+/// 2.9 — Itens de uma cotação: produto do catálogo OU descrição livre (sob especificação).
+model ItemCotacao {
+  id                     String   @id @default(cuid())
+  cotacaoId              String   @map("cotacao_id")
+  cotacao                Cotacao  @relation(fields: [cotacaoId], references: [id], onDelete: Cascade)
+  produtoId              String?  @map("produto_id")
+  produto                Produto? @relation(fields: [produtoId], references: [id])
+  descricaoLivre         String?  @map("descricao_livre")
+  quantidade             Int
+  precoUnitarioSugerido  Decimal? @map("preco_unitario_sugerido") @db.Decimal(12, 4)
+  precoUnitarioFinal     Decimal? @map("preco_unitario_final") @db.Decimal(12, 4)
+
+  anexos Anexo[]
+
+  @@map("itens_cotacao")
+}
+
+/// 2.10 — Log de auditoria das mudanças manuais de status.
+model HistoricoStatus {
+  id              String         @id @default(cuid())
+  cotacaoId       String         @map("cotacao_id")
+  cotacao         Cotacao        @relation(fields: [cotacaoId], references: [id], onDelete: Cascade)
+  statusAnterior  StatusCotacao? @map("status_anterior")
+  statusNovo      StatusCotacao  @map("status_novo")
+  alteradoPorId   String         @map("alterado_por_id")
+  // Sempre um Administrador — nunca automático (Colaborador não altera status por ora).
+  alteradoPor     Usuario        @relation("HistoricoAlteradoPor", fields: [alteradoPorId], references: [id])
+  dataAlteracao   DateTime       @default(now()) @map("data_alteracao")
+
+  @@map("historico_status")
+}
+
+/// 2.11 — Anexos obrigatórios em toda cotação (arte, logo, identidade, referência).
+/// Armazenamento definido: Vercel Blob (ver stack-tecnica-portal-do-personalizado.md).
+model Anexo {
+  id             String       @id @default(cuid())
+  cotacaoId      String       @map("cotacao_id")
+  cotacao        Cotacao      @relation(fields: [cotacaoId], references: [id], onDelete: Cascade)
+  itemCotacaoId  String?      @map("item_cotacao_id")
+  itemCotacao    ItemCotacao? @relation(fields: [itemCotacaoId], references: [id])
+  nomeArquivo    String       @map("nome_arquivo")
+  tipoArquivo    String       @map("tipo_arquivo")
+  tamanhoBytes   Int          @map("tamanho_bytes")
+  // Máximo 20MB por arquivo — validar na submissão (20 * 1024 * 1024 bytes).
+  urlArquivo     String       @map("url_arquivo")
+  // URL do Vercel Blob.
+  enviadoPorId   String       @map("enviado_por_id")
+  enviadoPor     Usuario      @relation("AnexoEnviadoPor", fields: [enviadoPorId], references: [id])
+  dataEnvio      DateTime     @default(now()) @map("data_envio")
+
+  @@map("anexos")
+}
+
+/// 2.12 — Token numérico de autenticação (login sem senha).
+model TokenAutenticacao {
+  id                   String    @id @default(cuid())
+  usuarioId            String    @map("usuario_id")
+  usuario              Usuario   @relation(fields: [usuarioId], references: [id])
+  codigo               String
+  criadoEm             DateTime  @default(now()) @map("criado_em")
+  expiraEm             DateTime  @map("expira_em")
+  // criado_em + 5 minutos.
+  tentativasInvalidas  Int       @default(0) @map("tentativas_invalidas")
+  // Bloqueia em 5.
+  bloqueadoAte         DateTime? @map("bloqueado_ate")
+  // momento_do_bloqueio + 15 minutos (desbloqueio automático).
+  reenviadoEm          DateTime? @map("reenviado_em")
+  // Controla a janela de 120s para permitir novo reenvio.
+
+  @@map("tokens_autenticacao")
+}
+
+/// 2.13 — Log das notificações por e-mail disparadas.
+model NotificacaoEmail {
+  id          String                  @id @default(cuid())
+  usuarioId   String                  @map("usuario_id")
+  usuario     Usuario                 @relation(fields: [usuarioId], references: [id])
+  cotacaoId   String?                 @map("cotacao_id")
+  cotacao     Cotacao?                @relation(fields: [cotacaoId], references: [id])
+  tipoEvento  TipoEventoNotificacao   @map("tipo_evento")
+  enviadoEm   DateTime                @default(now()) @map("enviado_em")
+
+  @@map("notificacoes_email")
+}
