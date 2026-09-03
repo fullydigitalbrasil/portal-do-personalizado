@@ -55,3 +55,16 @@ export async function encerrarSessao() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
+
+/**
+ * Exige uma sessão de Administrador. Regra definida no PRD v2.1 (seção 4.1):
+ * por ora, cadastro de Marca/Produto/Preço é exclusivo do Administrador —
+ * o Colaborador só visualiza. Use no início de toda Server Action de
+ * escrita nessas áreas; retorna null (em vez de lançar) para o chamador
+ * devolver um estado de erro amigável ao invés de estourar um Error.
+ */
+export async function obterSessaoAdmin(): Promise<SessionPayload | null> {
+  const sessao = await obterSessao();
+  if (!sessao || sessao.perfil !== "administrador") return null;
+  return sessao;
+}
