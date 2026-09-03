@@ -1,7 +1,34 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { prisma } from "@/lib/db/client";
+import { obterSessao } from "@/lib/auth/session";
+import { NovaCotacaoForm } from "./nova-cotacao-form";
 
-export default function NovaCotacaoPage() {
+export default async function NovaCotacaoPage() {
+  const sessao = await obterSessao();
+
+  if (!sessao || sessao.perfil !== "comprador") {
+    return (
+      <main className="mx-auto w-full max-w-2xl flex-1 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Aguardando aprovação</CardTitle>
+            <CardDescription>
+              Esta área é exclusiva para Compradores já aprovados pela TPO
+              Embalagens. Assim que seu cadastro for aprovado, você será
+              avisado por e-mail e poderá solicitar cotações por aqui.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </main>
+    );
+  }
+
+  const produtos = await prisma.produto.findMany({
+    where: { marcaId: sessao.marcaId ?? undefined, ativo: true },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true, descricao: true },
+  });
+
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-6">
       <div>
@@ -14,42 +41,7 @@ export default function NovaCotacaoPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Produto</CardTitle>
-          <CardDescription>
-            Catálogo da sua marca ou &ldquo;sob especificação&rdquo; (produto novo).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* TODO (Módulo 4): seletor de produto do catálogo (filtrado pela
-              MARCA do comprador logado) + opção "sob especificação" com
-              descrição livre. */}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Anexos (obrigatório)</CardTitle>
-          <CardDescription>
-            Arte, logo, identidade da marca ou foto de referência — imagem ou
-            documento, até 20MB por arquivo.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* TODO (Módulo 4): dropzone de upload direto para o Vercel Blob
-              (client upload), validando tipo e tamanho (máx. 20MB). */}
-        </CardContent>
-      </Card>
-
-      <Button type="submit" size="lg">
-        Enviar cotação
-      </Button>
-      {/* TODO (Módulo 4): Server Action que cria Cotacao (numero sequencial
-          "10" + 5 dígitos) + ItemCotacao + Anexo, calcula
-          valor_total_sugerido via FaixaPreco quando aplicável, e define
-          prazo_retorno_manual (5 dias úteis) para produtos sob
-          especificação. */}
+      <NovaCotacaoForm produtos={produtos} />
     </main>
   );
 }
