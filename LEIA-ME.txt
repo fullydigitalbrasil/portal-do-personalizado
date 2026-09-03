@@ -1,0 +1,61 @@
+Módulo 1 — Autenticação
+Portal do Personalizado — TPO Embalagens
+
+O QUE FAZER COM ESTE PACOTE
+----------------------------
+1. Extraia este zip.
+2. Copie cada arquivo/pasta para dentro da sua pasta "portal-do-personalizado",
+   mantendo o mesmo caminho relativo (sobrescrevendo os arquivos que já
+   existem, criando os que são novos). No Windows, dá pra simplesmente
+   arrastar o conteúdo extraído para dentro da pasta do projeto e confirmar
+   "Substituir" quando perguntado.
+3. IMPORTANTE: apague o arquivo antigo lib/email/resend.ts (sem o "x" no
+   final) se ele ainda existir na sua pasta — ele foi substituído por
+   lib/email/resend.tsx (mesmo conteúdo, mais o novo). Ter os dois ao mesmo
+   tempo quebra o build.
+4. No PowerShell, dentro da pasta do projeto, instale os 3 pacotes novos:
+     npm install jose server-only
+     npm install -D tsx
+5. Crie o primeiro usuário Administrador no banco (usa seu e-mail por
+   padrão: mario@fullydigital.com.br):
+     npx prisma db seed
+6. Envie tudo:
+     git add -A
+     git commit -m "Modulo 1: autenticacao (login por token)"
+     git push
+
+DEPOIS DO DEPLOY
+-----------------
+Acesse a URL do seu projeto (https://portal-do-personalizado.vercel.app/),
+clique em "Entrar", digite mario@fullydigital.com.br e confira sua caixa de
+entrada — deve chegar um e-mail com um código de 6 dígitos.
+
+ATENÇÃO — remetente de teste do Resend:
+Por padrão este módulo envia os e-mails de "onboarding@resend.dev" (o
+remetente de testes do Resend), porque o domínio da TPO ainda não foi
+verificado lá. Esse remetente só entrega para o e-mail da SUA conta Resend
+— então funciona para testar com o seu próprio e-mail, mas não vai
+funcionar ainda para outros usuários. Quando quiser usar de verdade,
+verifique um domínio (ex.: tpoembalagens.com.br) no painel do Resend e
+defina a variável de ambiente EMAIL_REMETENTE na Vercel com esse domínio.
+
+ARQUIVOS DESTE PACOTE
+-----------------------
+Novos:
+  lib/auth/session.ts          - sessão via cookie assinado (JWT)
+  lib/auth/actions.ts          - Server Actions de login (solicitar/verificar token, sair)
+  lib/auth/constants.ts        - nome do cookie + roteamento por perfil
+  lib/email/resend.tsx         - substitui lib/email/resend.ts
+  lib/email/templates/token-login.tsx - e-mail do código
+  app/(auth)/login/login-form.tsx
+  app/(auth)/login/verificar/page.tsx
+  app/(auth)/login/verificar/verificar-form.tsx
+  app/(admin)/layout.tsx, app/(cotacao)/layout.tsx, app/(acompanhamento)/layout.tsx
+  components/app-header.tsx    - cabeçalho com nome/perfil + botão Sair
+  proxy.ts                     - protege as rotas autenticadas
+  prisma/seed.ts                - cria o primeiro Administrador
+
+Alterados:
+  app/(auth)/login/page.tsx    - agora usa o novo login-form.tsx
+  prisma.config.ts             - lê DATABASE_URL_UNPOOLED + comando de seed
+  package.json                 - novas dependências (jose, tsx, server-only)
