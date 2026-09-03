@@ -1,8 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 
-// Script de seed (Módulo 1): cria o primeiro usuário Administrador, já
-// aprovado, para permitir o primeiro login no portal. Rode com:
+// Script de seed: cria o primeiro usuário Administrador, já aprovado, para
+// permitir o primeiro login no portal (Módulo 1), e a lista fixa de Nichos
+// do estabelecimento usada no autocadastro público (Módulo 3). Rode com:
 //   npx prisma db seed
 //
 // Personalize com variáveis de ambiente, se quiser:
@@ -13,7 +14,22 @@ const adapter = new PrismaNeon({
 });
 const prisma = new PrismaClient({ adapter });
 
-async function main() {
+// PRD v2.1, seção 5.1 — opções fixas do campo "Nicho do estabelecimento".
+const NICHOS = [
+  "Oriental",
+  "Pizzaria",
+  "Hamburgueria",
+  "Confeitaria",
+  "Salgados",
+  "Esfiha",
+  "Refeições",
+  "Pastelaria",
+  "Marmitas",
+  "Padaria",
+  "Carnes",
+];
+
+async function seedAdmin() {
   const email = process.env.SEED_ADMIN_EMAIL ?? "mario@fullydigital.com.br";
   const nomeCompleto = process.env.SEED_ADMIN_NOME ?? "Mario";
 
@@ -38,6 +54,22 @@ async function main() {
 
   console.log(`Administrador criado: ${admin.email} (id: ${admin.id})`);
   console.log("Acesse /login com esse e-mail para testar o Módulo 1.");
+}
+
+async function seedNichos() {
+  for (const nome of NICHOS) {
+    await prisma.nicho.upsert({
+      where: { nome },
+      create: { nome },
+      update: {},
+    });
+  }
+  console.log(`Nichos verificados/criados: ${NICHOS.length}.`);
+}
+
+async function main() {
+  await seedAdmin();
+  await seedNichos();
 }
 
 main()
