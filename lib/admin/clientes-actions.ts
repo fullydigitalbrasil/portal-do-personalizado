@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db/client";
 import { obterSessaoAdmin } from "@/lib/auth/session";
+import { notificarCadastroAprovado, notificarCadastroRecusado } from "@/lib/email/notificacoes";
 
 export type EstadoCliente = {
   ok: boolean;
@@ -109,7 +110,7 @@ export async function aprovarCadastro(
 
   const { usuarioId, marcaId, subtipoComprador } = parsed.data;
 
-  await prisma.usuario.update({
+  const atualizado = await prisma.usuario.update({
     where: { id: usuarioId },
     data: {
       perfil: "comprador",
@@ -119,9 +120,16 @@ export async function aprovarCadastro(
       aprovadoPorId: sessao.usuarioId,
       dataAprovacao: new Date(),
     },
+    include: { marca: true },
   });
 
-  // TODO (Módulo 7): disparar e-mail `cadastro_aprovado` para o cliente.
+  await notificarCadastroAprovado({
+    usuarioId: atualizado.id,
+    to: atualizado.email,
+    nome: atualizado.nomeCompleto,
+    nomeMarca: atualizado.marca?.nomeMarca ?? "",
+  });
+
   revalidatePath(CAMINHO_CLIENTES);
   return { ok: true };
 }
@@ -133,7 +141,7 @@ export async function recusarCadastro(usuarioId: string) {
     throw new Error("Apenas o Administrador pode recusar cadastros.");
   }
 
-  await prisma.usuario.update({
+  const atualizado = await prisma.usuario.update({
     where: { id: usuarioId },
     data: {
       statusCadastro: "recusado",
@@ -143,7 +151,12 @@ export async function recusarCadastro(usuarioId: string) {
     },
   });
 
-  // TODO (Módulo 7): disparar e-mail `cadastro_recusado` para o cliente.
+  await notificarCadastroRecusado({
+    usuarioId: atualizado.id,
+    to: atualizado.email,
+    nome: atualizado.nomeCompleto,
+  });
+
   revalidatePath(CAMINHO_CLIENTES);
 }
 

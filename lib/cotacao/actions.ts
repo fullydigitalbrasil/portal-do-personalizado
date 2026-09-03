@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/client";
 import { obterSessao } from "@/lib/auth/session";
 import { encontrarFaixaAplicavel, calcularPrazoRetornoManual } from "@/lib/cotacao/precificacao";
+import { notificarCotacaoCalculada } from "@/lib/email/notificacoes";
 
 export type ResultadoCotacao =
   | { ok: true; numero: string }
@@ -77,6 +78,7 @@ export async function criarCotacao(dados: CriarCotacaoInput): Promise<ResultadoC
   let valorTotalSugerido: string | null = null;
   let tipoPrecificacao: "automatica" | "manual" = "manual";
   let prazoRetornoManual: Date | null = null;
+  let nomeProduto = descricaoLivre ?? "";
 
   if (produtoId) {
     const produto = await prisma.produto.findUnique({
@@ -87,6 +89,8 @@ export async function criarCotacao(dados: CriarCotacaoInput): Promise<ResultadoC
     if (!produto || !produto.ativo || produto.marcaId !== marcaId) {
       return { ok: false, erro: "Produto inválido para a sua Marca." };
     }
+
+    nomeProduto = produto.nome;
 
     const faixa = encontrarFaixaAplicavel(produto.faixasPreco, quantidade);
     if (faixa) {
@@ -102,7 +106,7 @@ export async function criarCotacao(dados: CriarCotacaoInput): Promise<ResultadoC
     prazoRetornoManual = calcularPrazoRetornoManual();
   }
 
-  const numero = await prisma.$transaction(async (tx) => {
+  const cotacaoCriada = await prisma.$transaction(async (tx) => {
     const numeroGerado = await gerarProximoNumero(tx);
 
     const cotacao = await tx.cotacao.create({
@@ -133,10 +137,30 @@ export async function criarCotacao(dados: CriarCotacaoInput): Promise<ResultadoC
       },
     });
 
-    return cotacao.numero;
+    return cotacao;
   });
 
-  // TODO (Módulo 7): disparar e-mail `cotacao_calculada` (automática) ou
-  // confirmação de recebimento (manual) para o comprador.
-  return { ok: true, numero };
+  // cotacao_calculada só faz sentido quando já existe um valor sugerido de
+  // cara (precificação automática) — no caso manual, o "momento e-mail" é
+  // mais adiante, quando o Administrador revisa o preço (cotacao_revisada).
+  if (tipoPrecificacao === "automatica" && valorTotalSugerido) {
+    await notificarCotacaoCalculada({
+      usuarioId: sessao.usuarioId,
+      cotacaoId: cotacaoCriada.id,
+      to: sessao.email,
+      nome: sessao.nomeCompleto,
+      numero: cotacaoCriada.numero,
+      nomeProduto,
+      quantidade,
+      valorFormatado: formatarMoeda(valorTotalSugerido),
+    });
+  }
+
+  return { ok: true, numero: cotacaoCriada.numero };
+}
+
+function formatarMoeda(valor: string): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    Number(valor)
+  );
 }

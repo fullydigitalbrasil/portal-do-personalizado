@@ -29,7 +29,9 @@ export async function sendLoginToken({ to, nome, codigo }: EnviarTokenLoginParam
   });
 }
 
-// TODO (Módulo 7): criar um template em lib/email/templates para cada
-// outro tipo_evento de NOTIFICACAO_EMAIL (cadastro_aprovado,
+// Os demais 5 tipos de evento de NOTIFICACAO_EMAIL (cadastro_aprovado,
 // cadastro_recusado, cotacao_calculada, cotacao_revisada, mudanca_status)
-// seguindo o mesmo padrão do token-login.tsx.
+// têm seus templates em lib/email/templates e são enviados por
+// lib/email/notificacoes.ts (Módulo 7), que também grava o log de
+// auditoria em NotificacaoEmail — em vez de funções soltas aqui, para
+// manter o envio e o registro de auditoria juntos num único lugar.

@@ -5,7 +5,12 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/db/client";
 import { obterSessaoAdmin } from "@/lib/auth/session";
-import { faseDoStatus, STATUS_COTACAO_ORDEM } from "@/lib/cotacao/status";
+import { faseDoStatus, labelDoStatus, LABEL_FASE, STATUS_COTACAO_ORDEM } from "@/lib/cotacao/status";
+import { notificarCotacaoRevisada, notificarMudancaStatus } from "@/lib/email/notificacoes";
+
+function formatarMoeda(valor: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor);
+}
 
 export type EstadoCotacaoAdmin = {
   ok: boolean;
@@ -48,7 +53,7 @@ export async function revisarPreco(
 
   const cotacao = await prisma.cotacao.findUnique({
     where: { id: cotacaoId },
-    include: { itens: true },
+    include: { itens: true, comprador: { select: { nomeCompleto: true, email: true } } },
   });
   if (!cotacao) {
     return { ok: false, erro: "Cotação não encontrada." };
@@ -74,7 +79,15 @@ export async function revisarPreco(
     }),
   ]);
 
-  // TODO (Módulo 7): disparar e-mail `cotacao_revisada` para o comprador.
+  await notificarCotacaoRevisada({
+    usuarioId: cotacao.compradorId,
+    cotacaoId,
+    to: cotacao.comprador.email,
+    nome: cotacao.comprador.nomeCompleto,
+    numero: cotacao.numero,
+    valorFormatado: formatarMoeda(valorTotalFinal),
+  });
+
   caminhosCotacao(cotacaoId);
   return { ok: true };
 }
@@ -108,7 +121,10 @@ export async function alterarStatusCotacao(
   }
   const { cotacaoId, novoStatus } = parsed.data;
 
-  const cotacao = await prisma.cotacao.findUnique({ where: { id: cotacaoId } });
+  const cotacao = await prisma.cotacao.findUnique({
+    where: { id: cotacaoId },
+    include: { comprador: { select: { nomeCompleto: true, email: true } } },
+  });
   if (!cotacao) {
     return { ok: false, erro: "Cotação não encontrada." };
   }
@@ -116,25 +132,36 @@ export async function alterarStatusCotacao(
     return { ok: false, erro: "A cotação já está nesse status." };
   }
 
+  const novoStatusTipado = novoStatus as typeof cotacao.status;
+
   await prisma.$transaction([
     prisma.cotacao.update({
       where: { id: cotacaoId },
       data: {
-        status: novoStatus as typeof cotacao.status,
-        statusFase: faseDoStatus(novoStatus as typeof cotacao.status),
+        status: novoStatusTipado,
+        statusFase: faseDoStatus(novoStatusTipado),
       },
     }),
     prisma.historicoStatus.create({
       data: {
         cotacaoId,
         statusAnterior: cotacao.status,
-        statusNovo: novoStatus as typeof cotacao.status,
+        statusNovo: novoStatusTipado,
         alteradoPorId: sessao.usuarioId,
       },
     }),
   ]);
 
-  // TODO (Módulo 7): disparar e-mail `mudanca_status` para o comprador.
+  await notificarMudancaStatus({
+    usuarioId: cotacao.compradorId,
+    cotacaoId,
+    to: cotacao.comprador.email,
+    nome: cotacao.comprador.nomeCompleto,
+    numero: cotacao.numero,
+    statusLabel: labelDoStatus(novoStatusTipado),
+    faseLabel: LABEL_FASE[faseDoStatus(novoStatusTipado)],
+  });
+
   caminhosCotacao(cotacaoId);
   return { ok: true };
 }

@@ -102,7 +102,10 @@ export async function enviarAutocadastro(
     throw erro;
   }
 
-  // TODO (Módulo 7): disparar e-mail de notificação para o Administrador
-  // avisando sobre o novo cadastro pendente de aprovação.
+  // Nenhum e-mail é disparado aqui: o PRD v2.1 (seção 7) escopa as
+  // notificações por e-mail do Módulo 7 para eventos voltados ao cliente
+  // (aprovação/recusa de cadastro, cotação calculada/revisada, mudança de
+  // status) — um alerta interno para o Administrador sobre novo cadastro
+  // pendente não está no escopo definido.
   return { ok: true };
 }
